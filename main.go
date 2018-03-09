@@ -30,8 +30,6 @@ type Credential struct {
 	Dbname   string
 }
 
-var Providers map[string]Credential
-
 type MysqlFactory struct{}
 
 func (m *MysqlFactory) connect(c Credential) *sql.DB {
@@ -53,6 +51,7 @@ func (m *PostgresqlFactory) connect(c Credential) *sql.DB {
 	return db
 }
 
+var providers = getProviders()
 var db = initDB("mysql")
 
 func main() {
@@ -188,11 +187,6 @@ func removeUser(c *gin.Context) {
 func initDB(driver string) *sql.DB {
 	var db *sql.DB
 
-	var providers = map[string]Credential{
-		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
-		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
-	}
-
 	switch driver {
 	case "mysql":
 		db = connect(&MysqlFactory{}, providers[driver])
@@ -204,4 +198,11 @@ func initDB(driver string) *sql.DB {
 
 func connect(manager dbManager, credential Credential) *sql.DB {
 	return manager.connect(credential)
+}
+
+func getProviders() map[string]Credential {
+	return map[string]Credential{
+		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
+		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
+	}
 }
