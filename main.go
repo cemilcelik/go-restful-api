@@ -7,7 +7,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
+
+type dbManager interface {
+	connect(c Credential) *sql.DB
+}
 
 // User struct
 type User struct {
@@ -17,7 +22,38 @@ type User struct {
 	Email   string `json:"email"`
 }
 
-var db = initDB()
+// Credential struct
+type Credential struct {
+	Username string
+	Password string
+	Host     string
+	Dbname   string
+}
+
+var Providers map[string]Credential
+
+type MysqlFactory struct{}
+
+func (m *MysqlFactory) connect(c Credential) *sql.DB {
+	db, err := sql.Open("mysql", c.Username+":"+c.Password+"@"+c.Host+"/"+c.Dbname)
+
+	if err != nil {
+		fmt.Print(err.Error())
+	}
+	return db
+}
+
+type PostgresqlFactory struct{}
+
+func (m *PostgresqlFactory) connect(c Credential) *sql.DB {
+	db, err := sql.Open("postgresql", "user="+c.Username+" dbname="+c.Dbname+" sslmode=verify-full")
+	if err != nil {
+		fmt.Print(err.Error())
+	}
+	return db
+}
+
+var db = initDB("mysql")
 
 func main() {
 	defer db.Close()
@@ -149,10 +185,23 @@ func removeUser(c *gin.Context) {
 	})
 }
 
-func initDB() *sql.DB {
-	db, err := sql.Open("mysql", "root:@/db_gorestfulapi")
-	if err != nil {
-		fmt.Print(err.Error())
+func initDB(driver string) *sql.DB {
+	var db *sql.DB
+
+	var providers = map[string]Credential{
+		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
+		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
+	}
+
+	switch driver {
+	case "mysql":
+		db = connect(&MysqlFactory{}, providers[driver])
+	case "postgresql":
+		db = connect(&PostgresqlFactory{}, providers[driver])
 	}
 	return db
+}
+
+func connect(manager dbManager, credential Credential) *sql.DB {
+	return manager.connect(credential)
 }
