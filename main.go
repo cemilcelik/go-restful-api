@@ -11,7 +11,7 @@ import (
 )
 
 type dbManager interface {
-	connect(c Credential) *sql.DB
+	connect() *sql.DB
 }
 
 // User struct
@@ -30,10 +30,12 @@ type Credential struct {
 	Dbname   string
 }
 
-type MysqlFactory struct{}
+type MysqlFactory struct {
+	c Credential
+}
 
-func (m *MysqlFactory) connect(c Credential) *sql.DB {
-	db, err := sql.Open("mysql", c.Username+":"+c.Password+"@"+c.Host+"/"+c.Dbname)
+func (m *MysqlFactory) connect() *sql.DB {
+	db, err := sql.Open("mysql", m.c.Username+":"+m.c.Password+"@"+m.c.Host+"/"+m.c.Dbname)
 
 	if err != nil {
 		fmt.Print(err.Error())
@@ -41,10 +43,12 @@ func (m *MysqlFactory) connect(c Credential) *sql.DB {
 	return db
 }
 
-type PostgresqlFactory struct{}
+type PostgresqlFactory struct {
+	c Credential
+}
 
-func (m *PostgresqlFactory) connect(c Credential) *sql.DB {
-	db, err := sql.Open("postgresql", "user="+c.Username+" dbname="+c.Dbname+" sslmode=verify-full")
+func (m *PostgresqlFactory) connect() *sql.DB {
+	db, err := sql.Open("postgresql", "user="+m.c.Username+" dbname="+m.c.Dbname+" sslmode=verify-full")
 	if err != nil {
 		fmt.Print(err.Error())
 	}
@@ -189,15 +193,15 @@ func initDB(driver string) *sql.DB {
 
 	switch driver {
 	case "mysql":
-		db = connect(&MysqlFactory{}, providers[driver])
+		db = connect(&MysqlFactory{providers[driver]})
 	case "postgresql":
-		db = connect(&PostgresqlFactory{}, providers[driver])
+		db = connect(&PostgresqlFactory{providers[driver]})
 	}
 	return db
 }
 
-func connect(manager dbManager, credential Credential) *sql.DB {
-	return manager.connect(credential)
+func connect(manager dbManager) *sql.DB {
+	return manager.connect()
 }
 
 func getProviders() map[string]Credential {
