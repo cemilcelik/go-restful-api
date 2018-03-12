@@ -30,6 +30,81 @@ type Credential struct {
 	Dbname   string
 }
 
+type UserService struct {
+	repo UserRepository
+}
+
+type Repository interface {
+	findById(id string) (User, error)
+	save(name string, surname string, email string) error
+	update(id string, name string, surname string, email string) error
+	delete(id string) error
+	getAll() ([]User, error)
+}
+
+type UserRepository struct{}
+
+func (m *UserRepository) findById(id string) (User, error) {
+	var user User
+	row := db.QueryRow("select id, name, surname, email from users where id = ?;", id)
+	err := row.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
+
+	return user, err
+}
+
+func (m *UserRepository) save(name string, surname string, email string) (err error) {
+	stmt, err := db.Prepare("insert into users (name, surname, email) values(?, ?, ?);")
+	if err != nil {
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(name, surname, email)
+	return
+}
+
+func (m *UserRepository) update(id string, name string, surname string, email string) (err error) {
+	stmt, err := db.Prepare("update users set name=?, surname=?, email=? where id=?;")
+	if err != nil {
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(name, surname, email, id)
+	return
+}
+
+func (m *UserRepository) delete(id string) (err error) {
+	stmt, err := db.Prepare("delete from users where id=?;")
+	if err != nil {
+		return
+	}
+
+	_, err = stmt.Exec(id)
+	return
+}
+
+func (m *UserRepository) getAll() ([]User, error) {
+	var user User
+	var users []User
+
+	rows, err := db.Query("select id, name, surname, email from users;")
+	if err != nil {
+		return users, err
+	}
+
+	for rows.Next() {
+		err = rows.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
+		if err != nil {
+			return users, err
+		}
+		users = append(users, user)
+	}
+	defer rows.Close()
+
+	return users, err
+}
+
 type MysqlFactory struct {
 	c Credential
 }
@@ -57,6 +132,7 @@ func (m *PostgresqlFactory) connect() *sql.DB {
 
 var providers = getProviders()
 var db = initDB("mysql")
+var userSvc = initUserService()
 
 func main() {
 	defer db.Close()
@@ -73,25 +149,11 @@ func main() {
 }
 
 func indexUser(c *gin.Context) {
-	var (
-		user  User
-		users []User
-	)
 
-	rows, err := db.Query("select id, name, surname, email from users;")
+	users, err := userSvc.repo.getAll()
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Println(err.Error())
 	}
-
-	for rows.Next() {
-		err = rows.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
-		users = append(users, user)
-		if err != nil {
-			fmt.Print(err.Error())
-		}
-	}
-
-	defer rows.Close()
 
 	c.JSON(http.StatusOK, gin.H{
 		"result": users,
@@ -107,9 +169,7 @@ func getUser(c *gin.Context) {
 
 	id := c.Param("id")
 
-	row := db.QueryRow("select id, name, surname, email from users where id = ?;", id)
-
-	err := row.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
+	user, err := userSvc.repo.findById(id)
 	if err != nil {
 		result = gin.H{
 			"result": nil,
@@ -130,17 +190,10 @@ func addUser(c *gin.Context) {
 	surname := c.PostForm("surname")
 	email := c.PostForm("email")
 
-	stmt, err := db.Prepare("insert into users (name, surname, email) values(?, ?, ?);")
+	err := userSvc.repo.save(name, surname, email)
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Println(err.Error())
 	}
-
-	_, err = stmt.Exec(name, surname, email)
-	if err != nil {
-		fmt.Print(err.Error())
-	}
-
-	defer stmt.Close()
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprint("Record created successfully."),
@@ -153,17 +206,10 @@ func editUser(c *gin.Context) {
 	surname := c.PostForm("surname")
 	email := c.PostForm("email")
 
-	stmt, err := db.Prepare("update users set name=?, surname=?, email=? where id=?;")
+	err := userSvc.repo.update(id, name, surname, email)
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Println(err.Error())
 	}
-
-	_, err = stmt.Exec(name, surname, email, id)
-	if err != nil {
-		fmt.Print(err.Error())
-	}
-
-	defer stmt.Close()
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprint("Record updated successfully."),
@@ -172,15 +218,10 @@ func editUser(c *gin.Context) {
 
 func removeUser(c *gin.Context) {
 	id := c.Param("id")
-	fmt.Println("id:", id)
-	stmt, err := db.Prepare("delete from users where id=?;")
-	if err != nil {
-		fmt.Print(err.Error())
-	}
 
-	_, err = stmt.Exec(id)
+	err := userSvc.repo.delete(id)
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -198,6 +239,10 @@ func initDB(driver string) *sql.DB {
 		db = connect(&PostgresqlFactory{providers[driver]})
 	}
 	return db
+}
+
+func initUserService() *UserService {
+	return &UserService{UserRepository{}}
 }
 
 func connect(manager dbManager) *sql.DB {
