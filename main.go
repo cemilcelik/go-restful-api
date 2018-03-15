@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -31,11 +32,11 @@ type Credential struct {
 }
 
 type UserService struct {
-	repo UserRepository
+	repo Repository
 }
 
 type Repository interface {
-	findById(id string) (User, error)
+	findByID(id string) (User, error)
 	save(name string, surname string, email string) error
 	update(id string, name string, surname string, email string) error
 	delete(id string) error
@@ -44,7 +45,7 @@ type Repository interface {
 
 type UserRepository struct{}
 
-func (m *UserRepository) findById(id string) (User, error) {
+func (m *UserRepository) findByID(id string) (User, error) {
 	var user User
 	row := db.QueryRow("select id, name, surname, email from users where id = ?;", id)
 	err := row.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
@@ -52,7 +53,7 @@ func (m *UserRepository) findById(id string) (User, error) {
 	return user, err
 }
 
-func (m *UserRepository) save(name string, surname string, email string) (err error) {
+func (m *UserRepository) save(name, surname, email string) (err error) {
 	stmt, err := db.Prepare("insert into users (name, surname, email) values(?, ?, ?);")
 	if err != nil {
 		return
@@ -63,7 +64,7 @@ func (m *UserRepository) save(name string, surname string, email string) (err er
 	return
 }
 
-func (m *UserRepository) update(id string, name string, surname string, email string) (err error) {
+func (m *UserRepository) update(id, name, surname, email string) (err error) {
 	stmt, err := db.Prepare("update users set name=?, surname=?, email=? where id=?;")
 	if err != nil {
 		return
@@ -130,20 +131,16 @@ func (m *PostgresqlFactory) connect() *sql.DB {
 	return db
 }
 
-var providers = getProviders()
-var db = initDB("mysql")
-var userSvc = initUserService()
+var (
+	providers = getProviders()
+
+	db      = initDB("mysql")
+	userSvc = initUserService()
+	router  = initRouter()
+)
 
 func main() {
 	defer db.Close()
-
-	router := gin.Default()
-
-	router.GET("/user/:id", getUser)
-	router.GET("/users", indexUser)
-	router.POST("/user", addUser)
-	router.PATCH("/user/:id", editUser)
-	router.DELETE("/user/:id", removeUser)
 
 	router.Run(":3000")
 }
@@ -163,26 +160,20 @@ func indexUser(c *gin.Context) {
 
 func getUser(c *gin.Context) {
 	var (
-		user   User
-		result gin.H
+		user User
 	)
 
 	id := c.Param("id")
 
-	user, err := userSvc.repo.findById(id)
+	user, err := userSvc.repo.findByID(id)
 	if err != nil {
-		result = gin.H{
-			"result": nil,
-			"count":  0,
-		}
+		c.JSON(http.StatusNotFound, gin.H{
+			"message": fmt.Sprint("User not found."),
+		})
 	} else {
-		result = gin.H{
-			"result": user,
-			"count":  1,
-		}
+		c.JSON(http.StatusOK, user)
 	}
 
-	c.JSON(http.StatusOK, result)
 }
 
 func addUser(c *gin.Context) {
@@ -242,7 +233,19 @@ func initDB(driver string) *sql.DB {
 }
 
 func initUserService() *UserService {
-	return &UserService{UserRepository{}}
+	return &UserService{&UserRepository{}}
+}
+
+func initRouter() *gin.Engine {
+	router := gin.Default()
+
+	router.GET("/user/:id", getUser)
+	router.GET("/users", indexUser)
+	router.POST("/user", addUser)
+	router.PATCH("/user/:id", editUser)
+	router.DELETE("/user/:id", removeUser)
+
+	return router
 }
 
 func connect(manager dbManager) *sql.DB {
@@ -251,7 +254,7 @@ func connect(manager dbManager) *sql.DB {
 
 func getProviders() map[string]Credential {
 	return map[string]Credential{
-		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
-		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: "db_gorestfulapi"},
+		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: os.Getenv("DB_NAME")},
+		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: os.Getenv("DB_NAME")},
 	}
 }
