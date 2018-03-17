@@ -16,7 +16,7 @@ func TestEmptyTable(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", "/users", nil)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, `{"count":0,"result":null}`, rr.Body.String())
@@ -27,7 +27,7 @@ func TestNonExistingUser(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", "/user/1", nil)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, `{"message":"User not found."}`, rr.Body.String())
@@ -39,7 +39,7 @@ func TestIndexUser(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", "/users", nil)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	var r map[string]interface{}
 	json.Unmarshal(rr.Body.Bytes(), &r)
@@ -60,7 +60,7 @@ func TestAddUser(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/user", strings.NewReader(params.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, `{"message":"Record created successfully."}`, rr.Body.String())
@@ -72,7 +72,7 @@ func TestGetUser(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", "/user/1", nil)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	var u User
 	json.Unmarshal(rr.Body.Bytes(), &u)
@@ -96,7 +96,7 @@ func TestEditUser(t *testing.T) {
 	req, _ := http.NewRequest("PATCH", "/user/1", strings.NewReader(params.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, `{"message":"Record updated successfully."}`, rr.Body.String())
@@ -108,20 +108,20 @@ func TestRemoveUser(t *testing.T) {
 
 	req, _ := http.NewRequest("DELETE", "/user/3", nil)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	req, _ = http.NewRequest("GET", "/user/3", nil)
 	rr = httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	app.Router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func clearTable() {
-	db.Exec("DELETE FROM users")
-	db.Exec("ALTER SEQUENCE id RESTART WITH 1")
+	app.DB.Exec("DELETE FROM users")
+	app.DB.Exec("ALTER SEQUENCE id RESTART WITH 1")
 }
 
 func populateTable() {
@@ -132,6 +132,6 @@ func populateTable() {
 	}
 
 	for _, user := range users {
-		db.Exec("INSERT INTO users (id, name, surname, email) VALUES (?, ?, ?, ?)", user.ID, user.Name, user.Surname, user.Email)
+		app.DB.Exec("INSERT INTO users (id, name, surname, email) VALUES (?, ?, ?, ?)", user.ID, user.Name, user.Surname, user.Email)
 	}
 }

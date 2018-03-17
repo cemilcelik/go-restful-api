@@ -11,6 +11,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
+var providers = map[string]Credential{
+	"mysql":      Credential{Username: os.Getenv("DB_USERNAME"), Password: os.Getenv("DB_PASSWORD"), Host: os.Getenv("DB_HOST"), Dbname: os.Getenv("DB_NAME")},
+	"postgresql": Credential{Username: os.Getenv("DB_USERNAME"), Password: os.Getenv("DB_PASSWORD"), Host: os.Getenv("DB_HOST"), Dbname: os.Getenv("DB_NAME")},
+}
+
+var app App
+
 type dbManager interface {
 	connect() *sql.DB
 }
@@ -47,14 +54,14 @@ type UserRepository struct{}
 
 func (m *UserRepository) findByID(id string) (User, error) {
 	var user User
-	row := db.QueryRow("select id, name, surname, email from users where id = ?;", id)
+	row := app.DB.QueryRow("select id, name, surname, email from users where id = ?;", id)
 	err := row.Scan(&user.ID, &user.Name, &user.Surname, &user.Email)
 
 	return user, err
 }
 
 func (m *UserRepository) save(name, surname, email string) (err error) {
-	stmt, err := db.Prepare("insert into users (name, surname, email) values(?, ?, ?);")
+	stmt, err := app.DB.Prepare("insert into users (name, surname, email) values(?, ?, ?);")
 	if err != nil {
 		return
 	}
@@ -65,7 +72,7 @@ func (m *UserRepository) save(name, surname, email string) (err error) {
 }
 
 func (m *UserRepository) update(id, name, surname, email string) (err error) {
-	stmt, err := db.Prepare("update users set name=?, surname=?, email=? where id=?;")
+	stmt, err := app.DB.Prepare("update users set name=?, surname=?, email=? where id=?;")
 	if err != nil {
 		return
 	}
@@ -76,7 +83,7 @@ func (m *UserRepository) update(id, name, surname, email string) (err error) {
 }
 
 func (m *UserRepository) delete(id string) (err error) {
-	stmt, err := db.Prepare("delete from users where id=?;")
+	stmt, err := app.DB.Prepare("delete from users where id=?;")
 	if err != nil {
 		return
 	}
@@ -89,7 +96,7 @@ func (m *UserRepository) getAll() ([]User, error) {
 	var user User
 	var users []User
 
-	rows, err := db.Query("select id, name, surname, email from users;")
+	rows, err := app.DB.Query("select id, name, surname, email from users;")
 	if err != nil {
 		return users, err
 	}
@@ -111,7 +118,9 @@ type MysqlFactory struct {
 }
 
 func (m *MysqlFactory) connect() *sql.DB {
-	db, err := sql.Open("mysql", m.c.Username+":"+m.c.Password+"@"+m.c.Host+"/"+m.c.Dbname)
+	dsn := m.c.Username + ":" + m.c.Password + "@" + m.c.Host + "/" + m.c.Dbname
+	fmt.Println(dsn)
+	db, err := sql.Open("mysql", dsn)
 
 	if err != nil {
 		fmt.Print(err.Error())
@@ -123,31 +132,51 @@ type PostgresqlFactory struct {
 	c Credential
 }
 
-func (m *PostgresqlFactory) connect() *sql.DB {
-	db, err := sql.Open("postgresql", "user="+m.c.Username+" dbname="+m.c.Dbname+" sslmode=verify-full")
+func (p *PostgresqlFactory) connect() *sql.DB {
+	db, err := sql.Open("postgresql", "user="+p.c.Username+" dbname="+p.c.Dbname+" sslmode=verify-full")
 	if err != nil {
 		fmt.Print(err.Error())
 	}
 	return db
 }
 
-var (
-	providers = getProviders()
-
-	db      = initDB("mysql")
-	userSvc = initUserService()
-	router  = initRouter()
-)
-
-func main() {
-	defer db.Close()
-
-	router.Run(":3000")
+type App struct {
+	Router  *gin.Engine
+	DB      *sql.DB
+	UserSvc *UserService
 }
 
-func indexUser(c *gin.Context) {
+func (a *App) Init() {
+	a.Router = initRouter()
+	a.DB = initDB("mysql")
+	a.UserSvc = &UserService{&UserRepository{}}
+}
 
-	users, err := userSvc.repo.getAll()
+func (a *App) Run(port string) {
+	err := a.Router.Run(port)
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (a *App) Close() {
+	a.DB.Close()
+}
+
+func main() {
+	app = App{}
+
+	app.Init()
+
+	defer app.Close()
+
+	app.Run(":3000")
+}
+
+func indexUserHandler(c *gin.Context) {
+
+	users, err := app.UserSvc.repo.getAll()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -158,14 +187,14 @@ func indexUser(c *gin.Context) {
 	})
 }
 
-func getUser(c *gin.Context) {
+func getUserHandler(c *gin.Context) {
 	var (
 		user User
 	)
 
 	id := c.Param("id")
 
-	user, err := userSvc.repo.findByID(id)
+	user, err := app.UserSvc.repo.findByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": fmt.Sprint("User not found."),
@@ -176,12 +205,12 @@ func getUser(c *gin.Context) {
 
 }
 
-func addUser(c *gin.Context) {
+func addUserHandler(c *gin.Context) {
 	name := c.PostForm("name")
 	surname := c.PostForm("surname")
 	email := c.PostForm("email")
 
-	err := userSvc.repo.save(name, surname, email)
+	err := app.UserSvc.repo.save(name, surname, email)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -191,13 +220,13 @@ func addUser(c *gin.Context) {
 	})
 }
 
-func editUser(c *gin.Context) {
+func editUserHandler(c *gin.Context) {
 	id := c.Param("id")
 	name := c.PostForm("name")
 	surname := c.PostForm("surname")
 	email := c.PostForm("email")
 
-	err := userSvc.repo.update(id, name, surname, email)
+	err := app.UserSvc.repo.update(id, name, surname, email)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -207,10 +236,10 @@ func editUser(c *gin.Context) {
 	})
 }
 
-func removeUser(c *gin.Context) {
+func removeUserHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	err := userSvc.repo.delete(id)
+	err := app.UserSvc.repo.delete(id)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -239,22 +268,15 @@ func initUserService() *UserService {
 func initRouter() *gin.Engine {
 	router := gin.Default()
 
-	router.GET("/user/:id", getUser)
-	router.GET("/users", indexUser)
-	router.POST("/user", addUser)
-	router.PATCH("/user/:id", editUser)
-	router.DELETE("/user/:id", removeUser)
+	router.GET("/user/:id", getUserHandler)
+	router.GET("/users", indexUserHandler)
+	router.POST("/user", addUserHandler)
+	router.PATCH("/user/:id", editUserHandler)
+	router.DELETE("/user/:id", removeUserHandler)
 
 	return router
 }
 
 func connect(manager dbManager) *sql.DB {
 	return manager.connect()
-}
-
-func getProviders() map[string]Credential {
-	return map[string]Credential{
-		"mysql":      Credential{Username: "root", Password: "", Host: "", Dbname: os.Getenv("DB_NAME")},
-		"postgresql": Credential{Username: "root", Password: "", Host: "", Dbname: os.Getenv("DB_NAME")},
-	}
 }
