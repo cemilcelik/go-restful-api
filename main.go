@@ -12,8 +12,16 @@ import (
 )
 
 var providers = map[string]Credential{
-	"mysql":      Credential{Username: os.Getenv("DB_USERNAME"), Password: os.Getenv("DB_PASSWORD"), Host: os.Getenv("DB_HOST"), Dbname: os.Getenv("DB_NAME")},
-	"postgresql": Credential{Username: os.Getenv("DB_USERNAME"), Password: os.Getenv("DB_PASSWORD"), Host: os.Getenv("DB_HOST"), Dbname: os.Getenv("DB_NAME")},
+	"mysql": Credential{
+		Username: os.Getenv("DB_USERNAME"),
+		Password: os.Getenv("DB_PASSWORD"),
+		Host:     os.Getenv("DB_HOST"),
+		Dbname:   os.Getenv("DB_NAME")},
+	"postgresql": Credential{
+		Username: os.Getenv("DB_USERNAME"),
+		Password: os.Getenv("DB_PASSWORD"),
+		Host:     os.Getenv("DB_HOST"),
+		Dbname:   os.Getenv("DB_NAME")},
 }
 
 var app App
@@ -119,7 +127,6 @@ type MysqlFactory struct {
 
 func (m *MysqlFactory) connect() *sql.DB {
 	dsn := m.c.Username + ":" + m.c.Password + "@" + m.c.Host + "/" + m.c.Dbname
-	fmt.Println(dsn)
 	db, err := sql.Open("mysql", dsn)
 
 	if err != nil {
@@ -133,7 +140,8 @@ type PostgresqlFactory struct {
 }
 
 func (p *PostgresqlFactory) connect() *sql.DB {
-	db, err := sql.Open("postgresql", "user="+p.c.Username+" dbname="+p.c.Dbname+" sslmode=verify-full")
+	dsn := "user=" + p.c.Username + " dbname=" + p.c.Dbname + " sslmode=verify-full"
+	db, err := sql.Open("postgresql", dsn)
 	if err != nil {
 		fmt.Print(err.Error())
 	}
